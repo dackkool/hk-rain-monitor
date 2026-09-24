@@ -13,14 +13,14 @@
   },
   {
     "id": "SITE-03",
-    "name": "屯門第 54 區工程",
-    "district": "屯門",
-    "address": "屯門欣田邨旁"
+    "name": "櫻桃街公園",
+    "district": "油尖旺",
+    "address": "九龍旺角櫻桃街1號"
   },
   {
     "id": "SITE-04",
-    "name": "中環商業大廈外牆工程",
+    "name": "般咸道官立小學",
     "district": "中西區",
-    "address": "中環德輔道中 100 號"
+    "address": "香港島半山般咸道9A號"
   }
 ]
