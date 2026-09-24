@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程降雨與鄰區聯防監控</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 min-h-screen pb-10">
+
+    <header class="bg-slate-800 text-white p-4 shadow-lg sticky top-0 z-50 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl font-bold"><i class="fa-solid fa-building-user mr-2 text-blue-400"></i>工程降雨與鄰區聯防監控</h1>
+            <p class="text-xs text-slate-300" id="last-update">自動智慧定位地址與鄰近分區中...</p>
+        </div>
+        <button onclick="fetchWeatherData()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm transition font-medium flex items-center">
+            <i class="fa-solid fa-rotate mr-1"></i> 重新整理
+        </button>
+    </header>
+
+    <main class="max-w-md md:max-w-2xl mx-auto px-4 mt-4">
+
+        <!-- 天文台警告標籤區 -->
+        <div id="rain-warning-bar" class="mb-4 p-3 bg-white rounded-lg shadow-sm border border-slate-200 flex items-center justify-between text-sm">
+            <span class="font-bold text-slate-700"><i class="fa-solid fa-shield-halved mr-2 text-slate-500"></i>暴雨警告狀態：</span>
+            <span id="warning-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700">更新中...</span>
+        </div>
+
+        <!-- 狀態統計 -->
+        <div class="grid grid-cols-3 gap-2 mb-4">
+            <div class="bg-white p-3 rounded-lg shadow border-t-4 border-emerald-500 text-center">
+                <div class="text-xs text-gray-500">正常/無雨</div>
+                <div class="text-xl font-bold text-emerald-600" id="cnt-safe">0</div>
+            </div>
+            <div class="bg-white p-3 rounded-lg shadow border-t-4 border-amber-500 text-center">
+                <div class="text-xs text-gray-500">降雨/鄰區預警</div>
+                <div class="text-xl font-bold text-amber-600" id="cnt-alert">0</div>
+            </div>
+            <div class="bg-white p-3 rounded-lg shadow border-t-4 border-rose-500 text-center">
+                <div class="text-xs text-gray-500">大雨/停工警報</div>
+                <div class="text-xl font-bold text-rose-600" id="cnt-critical">0</div>
+            </div>
+        </div>
+
+        <!-- 地盤清單卡片 -->
+        <div id="site-cards" class="space-y-3">
+            <div class="text-center py-10 text-gray-500">
+                <i class="fa-solid fa-spinner fa-spin fa-2x mb-2"></i>
+                <p>正在解析地址及比對鄰近區域雨量...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // 香港完整分區與地名智慧對照表 (涵蓋香港常見地名)
+        const HK_LOCATION_RULES = [
+            // 北區
+            { keywords: ["粉嶺", "上水", "聯和墟", "香園圍", "打鼓嶺", "沙頭角", "北區"], primary: "北區", neighbors: ["大埔", "元朗"] },
+            // 大埔區
+            { keywords: ["大埔", "太和", "白石角", "科學園", "大尾篤"], primary: "大埔", neighbors: ["北區", "沙田"] },
+            // 沙田區
+            { keywords: ["沙田", "大圍", "火炭", "馬鞍山", "小瀝源", "石門"], primary: "沙田", neighbors: ["大埔", "黃大仙", "深水埗"] },
+            // 西貢區 / 將軍澳
+            { keywords: ["將軍澳", "調景嶺", "坑口", "寶琳", "康城", "西貢", "清水灣"], primary: "西貢", neighbors: ["觀塘"] },
+            // 觀塘區
+            { keywords: ["觀塘", "九龍灣", "牛頭角", "藍田", "油塘", "秀茂坪"], primary: "觀塘", neighbors: ["西貢", "黃大仙", "九龍城"] },
+            // 黃大仙區
+            { keywords: ["黃大仙", "鑽石山", "新蒲崗", "慈雲山", "樂富"], primary: "黃大仙", neighbors: ["九龍城", "觀塘", "沙田"] },
+            // 九龍城區
+            { keywords: ["九龍城", "何文田", "土瓜灣", "紅磡", "啟德", "九龍塘"], primary: "九龍城", neighbors: ["油尖旺", "黃大仙"] },
+            // 油尖旺區
+            { keywords: ["旺角", "油麻地", "尖沙咀", "佐敦", "大角咀", "太子", "油尖旺"], primary: "油尖旺", neighbors: ["深水埗", "九龍城"] },
+            // 深水埗區
+            { keywords: ["深水埗", "長沙灣", "荔枝角", "美孚", "石硤尾"], primary: "深水埗", neighbors: ["葵青", "油尖旺"] },
+            // 葵青區
+            { keywords: ["葵涌", "青衣", "葵芳", "葵興", "葵青"], primary: "葵青", neighbors: ["荃灣", "深水埗"] },
+            // 荃灣區
+            { keywords: ["荃灣", "深井", "青龍頭", "汀九"], primary: "荃灣", neighbors: ["葵青", "屯門"] },
+            // 屯門區
+            { keywords: ["屯門", "兆康", "碼頭", "掃管笏"], primary: "屯門", neighbors: ["元朗", "荃灣"] },
+            // 元朗區
+            { keywords: ["元朗", "天水圍", "錦田", "落馬洲", "洪水橋"], primary: "元朗", neighbors: ["屯門", "北區"] },
+            // 中西區
+            { keywords: ["中環", "金鐘", "上環", "西營盤", "石塘咀", "堅尼地城", "半山", "般咸道", "中西區"], primary: "中西區", neighbors: ["灣仔"] },
+            // 灣仔區
+            { keywords: ["灣仔", "銅鑼灣", "跑馬地", "大坑"], primary: "灣仔", neighbors: ["中西區", "東區", "南區"] },
+            // 東區
+            { keywords: ["北角", "鰂魚涌", "太古", "西灣河", "筲箕灣", "柴灣", "小西灣", "東區"], primary: "東區", neighbors: ["灣仔"] },
+            // 南區
+            { keywords: ["香港仔", "黃竹坑", "鴨脷洲", "淺水灣", "赤柱", "薄扶林", "南區"], primary: "南區", neighbors: ["灣仔", "中西區"] },
+            // 離島區
+            { keywords: ["東涌", "赤鱲角", "機場", "愉景灣", "梅窩", "大澳", "長洲", "坪洲", "離島"], primary: "離島區", neighbors: ["葵青", "屯門"] }
+        ];
+
+        // 智慧解析地址所屬主區與鄰區
+        function resolveSiteDistricts(address) {
+            for (const rule of HK_LOCATION_RULES) {
+                for (const kw of rule.keywords) {
+                    if (address.includes(kw)) {
+                        return { primary: rule.primary, neighbors: rule.neighbors };
+                    }
+                }
+            }
+            // 若完全無匹配，保底回傳九龍城
+            return { primary: "九龍城", neighbors: ["油尖旺", "黃大仙"] };
+        }
+
+        let sitesData = [];
+
+        async function init() {
+            try {
+                const res = await fetch('sites.json?t=' + new Date().getTime());
+                sitesData = await res.json();
+                await fetchWeatherData();
+            } catch (err) {
+                document.getElementById('site-cards').innerHTML = 
+                    `<div class="bg-red-100 text-red-700 p-4 rounded text-center">無法讀取 sites.json</div>`;
+            }
+        }
+
+        async function fetchWeatherData() {
+            try {
+                const [rainRes, warnRes] = await Promise.all([
+                    fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc'),
+                    fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc')
+                ]);
+
+                const rainData = await rainRes.json();
+                const warnData = await warnRes.json();
+
+                renderWarningBadge(warnData);
+                renderSites(rainData, warnData);
+
+                document.getElementById('last-update').innerText = `最後更新: ${new Date().toLocaleTimeString('zh-HK')}`;
+            } catch (error) {
+                console.error("API Error:", error);
+            }
+        }
+
+        function renderWarningBadge(warnData) {
+            const badge = document.getElementById('warning-badge');
+            if (warnData.WRAIN) {
+                const code = warnData.WRAIN.code;
+                if (code === 'WRAINA') { badge.className = "px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-white"; badge.innerText = "黃色暴雨警告生效"; }
+                else if (code === 'WRAINR') { badge.className = "px-3 py-1 rounded-full text-xs font-bold bg-rose-600 text-white"; badge.innerText = "紅色暴雨警告生效"; }
+                else if (code === 'WRAINB') { badge.className = "px-3 py-1 rounded-full text-xs font-bold bg-black text-white"; badge.innerText = "黑色暴雨警告生效"; }
+            } else {
+                badge.className = "px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800";
+                badge.innerText = "🟢 無暴雨警告生效";
+            }
+        }
+
+        function renderSites(rainData, warnData) {
+            const container = document.getElementById('site-cards');
+            container.innerHTML = '';
+
+            let cntSafe = 0, cntAlert = 0, cntCritical = 0;
+
+            const rainMap = {};
+            if (rainData.rainfall && rainData.rainfall.data) {
+                rainData.rainfall.data.forEach(item => {
+                    rainMap[item.place] = item.max || 0;
+                });
+            }
+
+            for (const site of sitesData) {
+                // 自動對照主區與鄰區
+                const { primary, neighbors } = resolveSiteDistricts(site.address);
+
+                const primaryRain = rainMap[primary] || 0;
+                let maxNeighborRain = 0;
+                let topNeighborName = "";
+
+                neighbors.forEach(n => {
+                    const r = rainMap[n] || 0;
+                    if (r > maxNeighborRain) {
+                        maxNeighborRain = r;
+                        topNeighborName = n;
+                    }
+                });
+
+                const effectiveRain = Math.max(primaryRain, maxNeighborRain);
+
+                let badgeClass = "bg-emerald-500 text-white";
+                let statusBorder = "border-emerald-500";
+                let signalText = "🟢 正常施工";
+                let advice = "本區及鄰近分區均無雨，可正常施工。";
+
+                if (effectiveRain >= 10 || warnData?.WRAIN) {
+                    statusBorder = "border-rose-500";
+                    badgeClass = "bg-rose-600 text-white";
+                    signalText = "🔴 大雨/停工警報";
+                    advice = "雨勢較大或暴雨警告生效！建議暫停戶外工程並做好防汛措施。";
+                    cntCritical++;
+                } else if (effectiveRain > 0) {
+                    statusBorder = "border-amber-500";
+                    badgeClass = "bg-amber-500 text-white";
+                    signalText = "🟡 降雨/鄰區預警";
+                    advice = maxNeighborRain > primaryRain 
+                        ? `注意！鄰近區 (${topNeighborName}) 已下雨 (${maxNeighborRain}mm)，雨雲可能正在移近！`
+                        : `本區 (${primary}) 有降雨 (${primaryRain}mm)，請做好物料覆蓋防雨。`;
+                    cntAlert++;
+                } else {
+                    cntSafe++;
+                }
+
+                const cardHTML = `
+                    <div class="bg-white rounded-lg shadow-md border-l-4 ${statusBorder} p-4">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <div class="flex items-center gap-1 flex-wrap">
+                                    <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">主區: ${primary}</span>
+                                    ${neighbors.map(n => `<span class="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">鄰區: ${n}</span>`).join('')}
+                                </div>
+                                <h2 class="text-lg font-bold text-gray-800 mt-1.5">${site.name}</h2>
+                                <p class="text-xs text-gray-500"><i class="fa-regular fa-map mr-1"></i>${site.address}</p>
+                            </div>
+                            <span class="text-xs px-2.5 py-1 rounded-full font-bold ${badgeClass}">${signalText}</span>
+                        </div>
+
+                        <div class="mt-3 pt-2 border-t border-gray-100 text-xs space-y-1">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">本區 (${primary}) 即時雨量:</span>
+                                <span class="font-bold ${primaryRain > 0 ? 'text-blue-600' : 'text-gray-400'}">${primaryRain} mm</span>
+                            </div>
+                            ${topNeighborName ? `
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">鄰區 (${topNeighborName}) 即時雨量:</span>
+                                <span class="font-bold ${maxNeighborRain > 0 ? 'text-amber-600' : 'text-gray-400'}">${maxNeighborRain} mm</span>
+                            </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="mt-2 text-xs text-gray-700 bg-slate-50 p-2 rounded border border-gray-200/60">
+                            💡 <strong>現場建議：</strong> ${advice}
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHTML);
+            }
+
+            document.getElementById('cnt-safe').innerText = cntSafe;
+            document.getElementById('cnt-alert').innerText = cntAlert;
+            document.getElementById('cnt-critical').innerText = cntCritical;
+        }
+
+        setInterval(fetchWeatherData, 180000);
+        window.onload = init;
+    </script>
+</body>
+      </html>
+      
