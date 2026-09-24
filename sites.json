@@ -2,25 +2,21 @@
   {
     "id": "SITE-01",
     "name": "粉嶺救恩中學",
-    "district": "粉嶺",
     "address": "新界粉嶺欣盛里3號"
   },
   {
     "id": "SITE-02",
     "name": "基愛小學",
-    "district": "深水埗",
     "address": "九龍李鄭屋廣利道15號"
   },
   {
     "id": "SITE-03",
     "name": "櫻桃街公園",
-    "district": "油尖旺",
     "address": "九龍旺角櫻桃街1號"
   },
   {
     "id": "SITE-04",
     "name": "般咸道官立小學",
-    "district": "中西區",
     "address": "香港島半山般咸道9A號"
   }
 ]
