@@ -1,15 +1,15 @@
 [
   {
     "id": "SITE-01",
-    "name": "啟德發展區 1J 地盤",
-    "district": "九龍城",
-    "address": "九龍啟德承豐道 18 號"
+    "name": "粉嶺救恩中學",
+    "district": "粉嶺",
+    "address": "新界粉嶺欣盛里3號"
   },
   {
     "id": "SITE-02",
-    "name": "葵湧貨櫃碼頭路地盤",
-    "district": "葵青",
-    "address": "葵湧貨櫃碼頭路 88 號"
+    "name": "基愛小學",
+    "district": "深水埗",
+    "address": "九龍李鄭屋廣利道15號"
   },
   {
     "id": "SITE-03",
