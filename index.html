@@ -61,7 +61,8 @@
         // 1. 初始化：載入工地清單與天文台數據
         async function init() {
             try {
-                const res = await fetch('sites.json');
+                // 加上 ?t= 時間戳記，強迫瀏覽器每次都下載最新的 sites.json，不使用舊快取
+                const res = await fetch('sites.json?t=' + new Date().getTime());
                 sitesData = await res.json();
                 await fetchWeatherData();
             } catch (err) {
