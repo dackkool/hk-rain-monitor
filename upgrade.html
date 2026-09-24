@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>工程地址智慧降雨監控</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-100 min-h-screen pb-10">
+
+    <!-- 頁頭 -->
+    <header class="bg-blue-700 text-white p-4 shadow-lg sticky top-0 z-50 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl font-bold"><i class="fa-solid fa-cloud-showers-heavy mr-2"></i>工程降雨及預報監控</h1>
+            <p class="text-xs text-blue-200" id="last-update">自動分析地址與天文台預報中...</p>
+        </div>
+        <button onclick="fetchWeatherData()" class="bg-blue-600 hover:bg-blue-800 text-white px-3 py-1.5 rounded-lg text-sm transition font-medium flex items-center">
+            <i class="fa-solid fa-rotate mr-1"></i> 重新整理
+        </button>
+    </header>
+
+    <main class="max-w-md md:max-w-2xl mx-auto px-4 mt-4">
+
+        <!-- 未來 1-2 小時降雨預報 / 特別天氣提示 -->
+        <div id="forecast-alert-box" class="hidden mb-4 p-3 bg-amber-50 border-l-4 border-amber-500 text-amber-900 rounded shadow-sm text-sm">
+            <div class="font-bold flex items-center mb-1">
+                <i class="fa-solid fa-bullhorn mr-2 text-amber-600"></i> 天文台未來數小時降雨提示：
+            </div>
+            <div id="forecast-alert-text" class="text-xs leading-relaxed text-amber-800"></div>
+        </div>
+
+        <!-- 狀態統計簡報 -->
+        <div class="grid grid-cols-3 gap-2 mb-4">
+            <div class="bg-white p-3 rounded-lg shadow border-t-4 border-emerald-500 text-center">
+                <div class="text-xs text-gray-500">正常施工</div>
+                <div class="text-xl font-bold text-emerald-600" id="cnt-safe">0</div>
+            </div>
+            <div class="bg-white p-3 rounded-lg shadow border-t-4 border-amber-500 text-center">
+                <div class="text-xs text-gray-500">降雨預警/微雨</div>
+                <div class="text-xl font-bold text-amber-600" id="cnt-alert">0</div>
+            </div>
+            <div class="bg-white p-3 rounded-lg shadow border-t-4 border-rose-500 text-center">
+                <div class="text-xs text-gray-500">大雨/警報</div>
+                <div class="text-xl font-bold text-rose-600" id="cnt-critical">0</div>
+            </div>
+        </div>
+
+        <!-- 工程地點清單 -->
+        <div id="site-cards" class="space-y-3">
+            <div class="text-center py-10 text-gray-500">
+                <i class="fa-solid fa-spinner fa-spin fa-2x mb-2"></i>
+                <p>正在自動分析工程地址及對比天文台預報...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // 香港地名與 18 區對照字典（自動解析關鍵字）
+        const subDistrictMap = {
+            "中西區": ["中環", "金鐘", "上環", "西環", "堅尼地城", "石塘咀", "西營盤", "半山", "添馬", "中西區"],
+            "灣仔": ["灣仔", "銅鑼灣", "跑馬地", "大坑", "掃桿埔", "天后"],
+            "東區": ["太古", "柴灣", "北角", "鰂魚湧", "筲箕灣", "小西灣", "杏花邨", "西灣河", "東區"],
+            "南區": ["香港仔", "黃竹坑", "鴨脷洲", "淺水灣", "赤柱", "石澳", "薄扶林", "數碼港", "摩星嶺", "南區"],
+            "油尖旺": ["尖沙咀", "旺角", "油麻地", "佐敦", "大角咀", "太子", "九龍站", "油尖旺"],
+            "深水埗": ["深水埗", "長沙灣", "荔枝角", "石硤尾", "美孚", "昂船洲"],
+            "九龍城": ["九龍城", "啟德", "土瓜灣", "紅磡", "何文田", "九龍塘", "馬頭圍"],
+            "黃大仙": ["黃大仙", "鑽石山", "新蒲崗", "慈雲山", "樂富", "竹園", "牛池灣"],
+            "觀塘": ["觀塘", "九龍灣", "牛頭角", "藍田", "油塘", "秀茂坪", "安達臣"],
+            "葵青": ["葵湧", "葵芳", "葵興", "青衣", "荔景", "貨櫃碼頭", "葵青"],
+            "荃灣": ["荃灣", "深井", "汀九", "荃灣西", "梨木樹", "柴灣角"],
+            "屯門": ["屯門", "掃管笏", "藍地", "碼頭", "龍鼓灘"],
+            "元朗": ["元朗", "天水圍", "錦田", "新田", "落馬洲", "廈村", "流浮山"],
+            "北區": ["上水", "粉嶺", "沙頭角", "打鼓嶺", "香園圍", "北區"],
+            "大埔": ["大埔", "太和", "白石角", "大埔滘", "吐露港"],
+            "沙田": ["沙田", "馬鞍山", "火炭", "大圍", "石門", "顯徑"],
+            "西貢": ["西貢", "將軍澳", "坑口", "寶琳", "調景嶺", "清水灣", "科技大學"],
+            "離島區": ["東湧", "赤鱲角", "機場", "愉景灣", "梅窩", "大澳", "長洲", "南丫島", "坪洲", "離島"]
+        };
+
+        // 根據地址自動推算所屬 18 區
+        function resolveDistrict(address) {
+            if (!address) return "未知分區";
+            
+            // 1. 先比對地名字典
+            for (const [district, keywords] of Object.entries(subDistrictMap)) {
+                for (const kw of keywords) {
+                    if (address.includes(kw)) {
+                        return district;
+                    }
+                }
+            }
+            return "通用分區";
+        }
+
+        let sitesData = [];
+
+        async function init() {
+            try {
+                // 強制讀取最新 sites.json，防止快取
+                const res = await fetch('sites.json?t=' + new Date().getTime());
+                sitesData = await res.json();
+                await fetchWeatherData();
+            } catch (err) {
+                document.getElementById('site-cards').innerHTML = 
+                    `<div class="bg-red-100 text-red-700 p-4 rounded text-center">無法讀取 sites.json，請檢查檔案格式。</div>`;
+            }
+        }
+
+        async function fetchWeatherData() {
+            try {
+                // 1. 抓取分區即時雨量
+                const rainRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
+                const rainData = await rainRes.json();
+
+                // 2. 抓取現行警告摘要
+                const warnRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=tc');
+                const warnData = await warnRes.json();
+
+                // 3. 抓取特別天氣提示 (含臨近降雨預報)
+                const swtRes = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=swt&lang=tc');
+                const swtData = await swtRes.json();
+
+                // 處理預報提示區
+                processForecastAlerts(swtData);
+
+                // 渲染各工地數據
+                renderSites(rainData, warnData, swtData);
+
+                const now = new Date();
+                document.getElementById('last-update').innerText = `最後更新: ${now.toLocaleTimeString('zh-HK')}`;
+
+            } catch (error) {
+                console.error("API Fetch Error:", error);
+                alert("無法取得天文台最新數據，請稍後再試。");
+            }
+        }
+
+        function processForecastAlerts(swtData) {
+            const box = document.getElementById('forecast-alert-box');
+            const textEl = document.getElementById('forecast-alert-text');
+
+            if (swtData && swtData.swt && swtData.swt.length > 0) {
+                const tips = swtData.swt.map(item => `• ${item.desc}`).join('<br>');
+                textEl.innerHTML = tips;
+                box.classList.remove('hidden');
+            } else {
+                box.classList.add('hidden');
+            }
+        }
+
+        function renderSites(rainData, warnData, swtData) {
+            const container = document.getElementById('site-cards');
+            container.innerHTML = '';
+
+            let cntSafe = 0, cntAlert = 0, cntCritical = 0;
+
+            // 建立分區雨量字典
+            const districtRainMap = {};
+            if (rainData.rainfall && rainData.rainfall.data) {
+                rainData.rainfall.data.forEach(item => {
+                    districtRainMap[item.place] = item.max;
+                });
+            }
+
+            // 特別天氣提示的全局預測關鍵字（如：大雨、雷暴）
+            const swtText = swtData?.swt ? JSON.stringify(swtData.swt) : "";
+            const hasFutureRainHint = swtText.includes("雨") || swtText.includes("驟雨");
+
+            sitesData.forEach(site => {
+                // 自動解析地址屬於哪一區
+                const computedDistrict = resolveDistrict(site.address);
+                site.computedDistrict = computedDistrict;
+
+                // 取得該區即時雨量
+                const rainValue = districtRainMap[computedDistrict] ?? 0;
+
+                // 檢查是否有針對該區的未來雨量預告
+                const isDistrictMentionedInSWT = swtText.includes(computedDistrict);
+
+                // 判定燈號邏輯
+                let badgeClass = "bg-emerald-500 text-white";
+                let statusBorder = "border-emerald-500";
+                let signalText = "🟢 正常施工";
+                let forecastText = "未來幾小時無明顯大雨預報";
+                let advice = "無降雨影響，可正常進行戶外工程。";
+
+                if (rainValue >= 10 || warnData?.WRAIN?.code === 'WRAINR' || warnData?.WRAIN?.code === 'WRAINB') {
+                    statusBorder = "border-rose-500";
+                    badgeClass = "bg-rose-600 text-white";
+                    signalText = "🔴 大雨/停工警報";
+                    forecastText = "現時正下大雨";
+                    advice = "雨勢較大！請暫停高空/戶外工程，並做好地盤防汛。";
+                    cntCritical++;
+                } else if (rainValue > 0 || isDistrictMentionedInSWT || warnData?.WRAIN?.code === 'WRAINY' || warnData?.WTS) {
+                    statusBorder = "border-amber-500";
+                    badgeClass = "bg-amber-500 text-white";
+                    signalText = "🟡 雨勢/降雨預警";
+                    forecastText = isDistrictMentionedInSWT ? "天文台預報：該區未來1-2小時有雨" : "現時有微雨或雷暴警告生效";
+                    advice = "該區有降雨趨勢，請注意備用物料覆蓋及戶外用電安全。";
+                    cntAlert++;
+                } else if (hasFutureRainHint) {
+                    statusBorder = "border-amber-400";
+                    badgeClass = "bg-amber-400 text-white";
+                    signalText = "🟡 全港雨勢戒備";
+                    forecastText = "天文台提示：本港局部地區未來可能受驟雨影響";
+                    advice = "請密切留意天空狀況及物料防雨準備。";
+                    cntAlert++;
+                } else {
+                    cntSafe++;
+                }
+
+                const cardHTML = `
+                    <div class="bg-white rounded-lg shadow-md border-l-4 ${statusBorder} p-4">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded mr-1">
+                                    <i class="fa-solid fa-location-dot mr-1"></i>${computedDistrict}
+                                </span>
+                                <h2 class="text-lg font-bold text-gray-800 mt-1">${site.name}</h2>
+                                <p class="text-xs text-gray-500"><i class="fa-regular fa-map mr-1"></i>${site.address}</p>
+                            </div>
+                            <span class="text-xs px-2.5 py-1 rounded-full font-bold ${badgeClass}">${signalText}</span>
+                        </div>
+
+                        <!-- 數據與預測 -->
+                        <div class="mt-3 pt-2 border-t border-gray-100 space-y-1 text-xs">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600"><i class="fa-solid fa-droplet text-blue-500 mr-1"></i>即時分區雨量:</span>
+                                <span class="font-bold ${rainValue > 0 ? 'text-blue-600' : 'text-gray-400'}">${rainValue} mm (過去1小時)</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600"><i class="fa-solid fa-crystal-ball text-purple-500 mr-1"></i>降雨預測趨勢:</span>
+                                <span class="font-semibold text-gray-700">${forecastText}</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-2 text-xs text-gray-600 bg-slate-50 p-2 rounded border border-gray-200/60">
+                            💡 <strong>工程建議：</strong> ${advice}
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHTML);
+            });
+
+            document.getElementById('cnt-safe').innerText = cntSafe;
+            document.getElementById('cnt-alert').innerText = cntAlert;
+            document.getElementById('cnt-critical').innerText = cntCritical;
+        }
+
+        // 每 3 分鐘自動更新
+        setInterval(fetchWeatherData, 180000);
+        window.onload = init;
+    </script>
+</body>
+</html>
